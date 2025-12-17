@@ -1,0 +1,214 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ exam.title }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto" x-data="examHandler()">
+    <!-- Exam Header (Fixed) -->
+    <div class="fixed top-16 left-0 right-0 bg-white border-b border-gray-200 z-40 px-4 py-3 shadow-sm">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <div>
+                <h1 class="text-lg font-bold text-gray-900">{{ exam.title }}</h1>
+                <p class="text-sm text-gray-600">{{ job.title }} - {{ company.company_name }}</p>
+            </div>
+            <div class="flex items-center space-x-6">
+                <!-- Timer -->
+                <div class="flex items-center space-x-2 px-4 py-2 rounded-xl" 
+                    :class="timeRemaining < 300 ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span class="font-bold font-mono" x-text="formatTime(timeRemaining)"></span>
+                </div>
+                <!-- Progress -->
+                <div class="text-sm text-gray-600">
+                    <span class="font-bold text-gray-900" x-text="answeredCount"></span> / {{ questions|length }} answered
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spacer for fixed header -->
+    <div class="h-20"></div>
+
+    <!-- Exam Content -->
+    <form method="POST" action="{{ url_for('exam.submit_exam', attempt_id=attempt.id) }}" id="examForm" class="space-y-6 pb-24">
+        <!-- Question Navigation -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sticky top-36 z-30">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold text-gray-900">Questions</h3>
+                <div class="flex items-center space-x-2 text-sm">
+                    <span class="flex items-center"><span class="w-3 h-3 bg-green-500 rounded mr-1"></span> Answered</span>
+                    <span class="flex items-center"><span class="w-3 h-3 bg-gray-200 rounded mr-1"></span> Not answered</span>
+                    <span class="flex items-center"><span class="w-3 h-3 bg-yellow-500 rounded mr-1"></span> Flagged</span>
+                </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                {% for question in questions %}
+                <button type="button" 
+                    @click="scrollToQuestion({{ loop.index }})"
+                    class="w-10 h-10 rounded-lg font-semibold transition text-sm"
+                    :class="getQuestionStatus({{ loop.index }})">
+                    {{ loop.index }}
+                </button>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Questions -->
+        {% for question in questions %}
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" id="question-{{ loop.index }}">
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <span class="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-lg flex items-center justify-center font-bold text-sm">
+                        {{ loop.index }}
+                    </span>
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2 py-0.5 text-xs font-medium rounded-full
+                            {% if question.difficulty == 'easy' %}bg-green-100 text-green-700
+                            {% elif question.difficulty == 'medium' %}bg-yellow-100 text-yellow-700
+                            {% else %}bg-red-100 text-red-700{% endif %}">
+                            {{ question.difficulty|title }}
+                        </span>
+                        <span class="text-sm text-gray-500">{{ question.points }} points</span>
+                    </div>
+                </div>
+                <button type="button" 
+                    @click="toggleFlag({{ loop.index }})"
+                    class="p-2 rounded-lg transition"
+                    :class="flagged.includes({{ loop.index }}) ? 'bg-yellow-100 text-yellow-600' : 'text-gray-400 hover:text-yellow-600 hover:bg-yellow-50'">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-900 font-medium mb-6">{{ question.question_text }}</p>
+                
+                {% if question.question_type == 'mcq' %}
+                <div class="space-y-3">
+                    {% for option in question.options %}
+                    <label class="flex items-start p-4 border-2 rounded-xl cursor-pointer transition hover:border-indigo-200"
+                        :class="answers['q{{ question.id }}'] === '{{ option.id }}' ? 'border-indigo-600 bg-indigo-50' : 'border-gray-200'">
+                        <input type="radio" 
+                            name="q{{ question.id }}" 
+                            value="{{ option.id }}"
+                            @change="setAnswer('q{{ question.id }}', '{{ option.id }}')"
+                            class="sr-only">
+                        <div class="w-6 h-6 border-2 rounded-full flex items-center justify-center mr-3 mt-0.5 flex-shrink-0 transition"
+                            :class="answers['q{{ question.id }}'] === '{{ option.id }}' ? 'border-indigo-600 bg-indigo-600' : 'border-gray-300'">
+                            <div class="w-2 h-2 bg-white rounded-full" x-show="answers['q{{ question.id }}'] === '{{ option.id }}'"></div>
+                        </div>
+                        <span class="text-gray-700">{{ option.option_text }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% elif question.question_type == 'coding' %}
+                <div class="space-y-4">
+                    <div class="text-sm text-gray-500">Language: {{ question.language|title }}</div>
+                    <textarea name="q{{ question.id }}" rows="12" 
+                        class="form-input w-full font-mono text-sm"
+                        @input="setAnswer('q{{ question.id }}', $event.target.value)"
+                        placeholder="Write your code here...">{{ question.code_template or '' }}</textarea>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Submit Section -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="text-lg font-semibold text-gray-900">Ready to submit?</div>
+                    <p class="text-gray-600">
+                        <span x-text="answeredCount"></span> of {{ questions|length }} questions answered
+                        <span x-show="answeredCount < {{ questions|length }}" class="text-yellow-600">
+                            ({{ questions|length }} - <span x-text="answeredCount"></span> unanswered)
+                        </span>
+                    </p>
+                </div>
+                <button type="submit" 
+                    class="px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition shadow-lg"
+                    @click="confirmSubmit($event)">
+                    Submit Exam
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+function examHandler() {
+    return {
+        timeRemaining: {{ (exam.time_limit * 60)|int }},
+        answers: {},
+        flagged: [],
+        
+        get answeredCount() {
+            return Object.keys(this.answers).filter(k => this.answers[k]).length;
+        },
+        
+        init() {
+            // Start timer
+            setInterval(() => {
+                if (this.timeRemaining > 0) {
+                    this.timeRemaining--;
+                } else {
+                    // Auto-submit when time runs out
+                    document.getElementById('examForm').submit();
+                }
+            }, 1000);
+            
+            // Warn before leaving
+            window.addEventListener('beforeunload', (e) => {
+                e.preventDefault();
+                e.returnValue = '';
+            });
+        },
+        
+        formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        },
+        
+        setAnswer(questionId, value) {
+            this.answers[questionId] = value;
+        },
+        
+        toggleFlag(questionNum) {
+            const idx = this.flagged.indexOf(questionNum);
+            if (idx > -1) {
+                this.flagged.splice(idx, 1);
+            } else {
+                this.flagged.push(questionNum);
+            }
+        },
+        
+        getQuestionStatus(questionNum) {
+            const questionKey = 'q' + document.querySelector(`#question-${questionNum} input, #question-${questionNum} textarea`)?.name?.replace('q', '');
+            if (this.flagged.includes(questionNum)) {
+                return 'bg-yellow-500 text-white';
+            }
+            if (this.answers[questionKey]) {
+                return 'bg-green-500 text-white';
+            }
+            return 'bg-gray-200 text-gray-600 hover:bg-gray-300';
+        },
+        
+        scrollToQuestion(num) {
+            document.getElementById(`question-${num}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        },
+        
+        confirmSubmit(event) {
+            if (this.answeredCount < {{ questions|length }}) {
+                if (!confirm(`You have ${{{ questions|length }} - this.answeredCount} unanswered questions. Are you sure you want to submit?`)) {
+                    event.preventDefault();
+                }
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
