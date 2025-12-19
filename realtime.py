@@ -133,3 +133,17 @@ def on_code_change(data):
         'language': data.get('language', 'javascript'),
         'from': request.sid
     }, room=room_id, include_self=False)
+
+# Chat Message Events
+@socketio.on('chat_message')
+def on_chat_message(data):
+    room_id = str(data['room'])
+    user_info = INTERVIEW_PARTICIPANTS.get(room_id, {}).get(request.sid, {})
+    username = user_info.get('username', 'Unknown')
+    
+    emit('chat_message', {
+        'message': data['message'],
+        'username': username,
+        'from': request.sid,
+        'timestamp': datetime.utcnow().isoformat()
+    }, room=room_id, include_self=False)

@@ -1,289 +1,719 @@
-{% extends 'base.html' %}
-
-{% block title %}Interview Room - {{ interview.id }}{% endblock %}
-
-{% block content %}
-<div class="h-[calc(100vh-4rem)] flex flex-col" x-data="interviewRoom()">
-    <!-- Interview Header -->
-    <div class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-        <div class="flex items-center space-x-4">
-            <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center text-white font-bold">
-                {{ job.title[0] }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ room.room_name }} - {{ job.title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            background-color: #202124;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        .interview-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .interview-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .header-info h4 { margin: 0; font-size: 1.1rem; }
+        .header-info p { margin: 0; font-size: 0.85rem; opacity: 0.85; }
+        
+        .header-actions { display: flex; gap: 0.5rem; }
+        .header-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .header-btn:hover { background: rgba(255,255,255,0.3); }
+        .header-btn.danger { background: #ea4335; }
+        .header-btn.danger:hover { background: #d33b2c; }
+        
+        .interview-main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .video-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            gap: 1rem;
+        }
+        
+        .videos-area {
+            flex: 1;
+            display: flex;
+            gap: 1rem;
+            min-height: 0;
+        }
+        
+        /* Main video - remote participant (big view) */
+        .main-video-container {
+            flex: 1;
+            background: #2d2d30;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .main-video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .main-video-container .video-label {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.75);
+            color: white;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .main-video-container .expand-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.6);
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .main-video-container:hover .expand-btn { opacity: 1; }
+        
+        .no-remote-message {
+            color: #9aa0a6;
+            text-align: center;
+        }
+        .no-remote-message i { font-size: 4rem; margin-bottom: 1rem; opacity: 0.5; }
+        .no-remote-message p { margin: 0.5rem 0; }
+        
+        /* Self video (small PIP) */
+        .self-video-container {
+            position: absolute;
+            bottom: 100px;
+            right: 24px;
+            width: 200px;
+            height: 150px;
+            background: #2d2d30;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 3px solid #1a73e8;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+        
+        .self-video-container:hover {
+            transform: scale(1.05);
+        }
+        
+        .self-video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        .self-video-container .video-label {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(0,0,0,0.75);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        
+        /* Video controls bar */
+        .video-controls {
+            display: flex;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: rgba(32, 33, 36, 0.95);
+            border-radius: 12px;
+            flex-shrink: 0;
+        }
+        
+        .control-btn {
+            background: #3c4043;
+            border: none;
+            color: white;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+        
+        .control-btn:hover { background: #5f6368; transform: scale(1.1); }
+        .control-btn.muted, .control-btn.off { background: #ea4335; }
+        .control-btn.active { background: #1a73e8; }
+        .control-btn.end-call { background: #ea4335; width: 56px; border-radius: 28px; }
+        .control-btn.end-call:hover { background: #d33b2c; }
+        
+        .control-divider {
+            width: 1px;
+            background: #5f6368;
+            margin: 0 0.5rem;
+        }
+        
+        /* Right side panel */
+        .side-panel {
+            width: 380px;
+            background: #292a2d;
+            display: none;
+            flex-direction: column;
+            border-left: 1px solid #3c4043;
+            flex-shrink: 0;
+        }
+        .side-panel.open { display: flex; }
+        
+        .panel-header {
+            padding: 1rem;
+            border-bottom: 1px solid #3c4043;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+        .panel-header h5 { margin: 0; font-weight: 600; }
+        .panel-close {
+            background: none;
+            border: none;
+            color: #9aa0a6;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+        .panel-close:hover { color: white; }
+        
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+        
+        /* Chat styles */
+        .chat-messages {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .chat-msg {
+            max-width: 85%;
+        }
+        .chat-msg.self { align-self: flex-end; }
+        .chat-msg .sender {
+            font-size: 0.75rem;
+            color: #9aa0a6;
+            margin-bottom: 4px;
+        }
+        .chat-msg .bubble {
+            padding: 0.6rem 1rem;
+            border-radius: 18px;
+            font-size: 0.9rem;
+        }
+        .chat-msg.self .bubble { background: #1a73e8; color: white; }
+        .chat-msg.other .bubble { background: #3c4043; color: white; }
+        
+        .chat-input-area {
+            padding: 1rem;
+            border-top: 1px solid #3c4043;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .chat-input-area input {
+            flex: 1;
+            background: #3c4043;
+            border: none;
+            color: white;
+            padding: 0.75rem 1rem;
+            border-radius: 24px;
+            outline: none;
+        }
+        .chat-input-area input::placeholder { color: #9aa0a6; }
+        .chat-input-area button {
+            background: #1a73e8;
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        
+        /* Notes styles */
+        .notes-area textarea {
+            width: 100%;
+            height: 300px;
+            background: #3c4043;
+            border: none;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            resize: vertical;
+            font-family: inherit;
+            outline: none;
+        }
+        .notes-area textarea::placeholder { color: #9aa0a6; }
+        .notes-actions {
+            margin-top: 1rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .notes-actions button {
+            flex: 1;
+            padding: 0.6rem;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .notes-actions .save-btn { background: #1a73e8; color: white; }
+        .notes-actions .clear-btn { background: #3c4043; color: white; }
+        
+        /* Questions styles */
+        .questions-list { display: flex; flex-direction: column; gap: 0.75rem; }
+        .question-item {
+            background: #3c4043;
+            padding: 1rem;
+            border-radius: 8px;
+            color: white;
+        }
+        .question-item .q-num {
+            font-size: 0.75rem;
+            color: #8ab4f8;
+            margin-bottom: 0.25rem;
+        }
+        .question-item .q-text { font-size: 0.95rem; }
+        .question-item .q-category {
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: #9aa0a6;
+        }
+        .no-questions {
+            text-align: center;
+            color: #9aa0a6;
+            padding: 2rem;
+        }
+        
+        /* Fullscreen video modal */
+        .fullscreen-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.95);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .fullscreen-overlay.active { display: flex; }
+        .fullscreen-overlay video {
+            max-width: 95%;
+            max-height: 95%;
+            border-radius: 12px;
+        }
+        .fullscreen-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
+        
+        /* Panel toggle buttons badge */
+        .panel-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: #ea4335;
+            color: white;
+            font-size: 10px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-btn.with-badge { position: relative; }
+    </style>
+</head>
+<body>
+    <div class="interview-container">
+        <!-- Header -->
+        <div class="interview-header">
+            <div class="header-info">
+                <h4><i class="fas fa-video me-2"></i>{{ room.room_name }}</h4>
+                <p>{{ company.company_name }} • {{ job.title }} • {{ candidate_name }}</p>
             </div>
-            <div>
-                <h1 class="font-bold text-gray-900">{{ job.title }}</h1>
-                <p class="text-sm text-gray-600">Interview with {{ candidate_name }}</p>
+            <div class="header-actions">
+                <span style="color: rgba(255,255,255,0.8); margin-right: 1rem;">
+                    <i class="fas fa-clock me-1"></i>
+                    <span id="callDuration">0:00</span>
+                </span>
+                {% if current_user_role == 'interviewer' %}
+                <a href="{{ url_for('interview.interview_feedback', room_code=room.room_code) }}" class="header-btn" style="background: linear-gradient(135deg, #f59e0b, #ea580c); text-decoration: none;">
+                    <i class="fas fa-clipboard-check me-1"></i> End & Feedback
+                </a>
+                {% endif %}
             </div>
         </div>
-        <div class="flex items-center space-x-4">
-            <!-- Duration -->
-            <div class="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 rounded-lg text-sm">
-                <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                <span class="font-mono" x-text="formatDuration(duration)">00:00:00</span>
-            </div>
-            <!-- Status -->
-            <span class="px-3 py-1.5 rounded-lg text-sm font-medium"
-                :class="connected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'">
-                <span class="inline-block w-2 h-2 rounded-full mr-2" :class="connected ? 'bg-green-500' : 'bg-red-500'"></span>
-                <span x-text="connected ? 'Connected' : 'Disconnected'"></span>
-            </span>
-            <!-- Leave Button -->
-            <button @click="leaveInterview()" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-xl hover:bg-red-700 transition">
-                Leave Interview
-            </button>
-        </div>
-    </div>
 
-    <!-- Main Content -->
-    <div class="flex-1 flex overflow-hidden">
-        <!-- Video Section -->
-        <div class="flex-1 flex flex-col p-4 bg-gray-900">
-            <!-- Video Grid -->
-            <div class="flex-1 grid grid-cols-2 gap-4">
-                <!-- Remote Video -->
-                <div class="relative bg-black rounded-2xl overflow-hidden">
-                    <video id="remoteVideo" autoplay playsinline class="w-full h-full object-cover"></video>
-                    <div class="absolute bottom-4 left-4 px-3 py-1 bg-black/50 rounded-lg text-white text-sm">
-                        {{ candidate_name if current_user.user_type == 'interviewer' else interviewer_name }}
+        <!-- Main Content -->
+        <div class="interview-main">
+            <!-- Video Section -->
+            <div class="video-section">
+                <div class="videos-area">
+                    <!-- Main video (remote participant) -->
+                    <div class="main-video-container" id="mainVideoContainer">
+                        <div class="no-remote-message" id="noRemoteMessage">
+                            <i class="fas fa-user-clock"></i>
+                            <p>Waiting for participant to join...</p>
+                            <p style="font-size: 0.9rem;">Room Code: <strong>{{ room.room_code }}</strong></p>
+                        </div>
+                        <video id="mainVideo" autoplay playsinline style="display: none;"></video>
+                        <div class="video-label" id="mainVideoLabel" style="display: none;">Participant</div>
+                        <button class="expand-btn" onclick="toggleFullscreen()" title="Fullscreen">
+                            <i class="fas fa-expand"></i>
+                        </button>
                     </div>
-                    <div x-show="!remoteVideoEnabled" class="absolute inset-0 flex items-center justify-center bg-gray-800">
-                        <div class="w-24 h-24 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white text-3xl font-bold">
-                            {{ (candidate_name if current_user.user_type == 'interviewer' else interviewer_name)[0] }}
+                </div>
+                
+                <!-- Self video (PIP) -->
+                <div class="self-video-container" onclick="swapVideos()">
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div class="video-label"><i class="fas fa-user me-1"></i>You</div>
+                </div>
+
+                <!-- Video Controls -->
+                <div class="video-controls">
+                    <button id="muteBtn" class="control-btn" title="Toggle Microphone">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <button id="videoToggleBtn" class="control-btn" title="Toggle Camera">
+                        <i class="fas fa-video"></i>
+                    </button>
+                    <button id="screenShareBtn" class="control-btn" title="Share Screen">
+                        <i class="fas fa-desktop"></i>
+                    </button>
+                    
+                    <div class="control-divider"></div>
+                    
+                    <button id="codeEditorBtn" class="control-btn" title="Open Code Editor">
+                        <i class="fas fa-code"></i>
+                    </button>
+                    
+                    <div class="control-divider"></div>
+                    
+                    <button class="control-btn with-badge" onclick="togglePanel('chat')" title="Chat">
+                        <i class="fas fa-comment-alt"></i>
+                        <span class="panel-badge" id="chatBadge" style="display: none;">0</span>
+                    </button>
+                    {% if current_user_role == 'interviewer' %}
+                    <button class="control-btn" onclick="togglePanel('notes')" title="Notes">
+                        <i class="fas fa-sticky-note"></i>
+                    </button>
+                    <button class="control-btn" onclick="togglePanel('questions')" title="Question Bank">
+                        <i class="fas fa-list-ol"></i>
+                    </button>
+                    {% endif %}
+                    
+                    <div class="control-divider"></div>
+                    
+                    <button id="endCallBtn" class="control-btn end-call" title="Leave Interview">
+                        <i class="fas fa-phone-slash"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Side Panel (Chat/Notes/Questions) -->
+            <div class="side-panel" id="sidePanel">
+                <!-- Chat Panel -->
+                <div id="chatPanel" style="display: none; flex-direction: column; height: 100%;">
+                    <div class="panel-header">
+                        <h5><i class="fas fa-comment-alt me-2"></i>Chat</h5>
+                        <button class="panel-close" onclick="closePanel()"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="panel-body">
+                        <div class="chat-messages" id="chatMessages">
+                            <p style="color: #9aa0a6; text-align: center; font-size: 0.85rem;">
+                                Messages are only visible to participants in this call
+                            </p>
+                        </div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="handleChatKeypress(event)">
+                        <button onclick="sendChatMessage()"><i class="fas fa-paper-plane"></i></button>
+                    </div>
+                </div>
+                
+                <!-- Notes Panel (Interviewer only) -->
+                <div id="notesPanel" style="display: none; flex-direction: column; height: 100%;">
+                    <div class="panel-header">
+                        <h5><i class="fas fa-sticky-note me-2"></i>Interview Notes</h5>
+                        <button class="panel-close" onclick="closePanel()"><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="panel-body">
+                        <div class="notes-area">
+                            <textarea id="interviewNotes" placeholder="Take notes during the interview...&#10;&#10;• Technical skills&#10;• Communication&#10;• Problem solving&#10;• Culture fit"></textarea>
+                            <div class="notes-actions">
+                                <button class="save-btn" onclick="saveNotes()"><i class="fas fa-save me-1"></i>Save</button>
+                                <button class="clear-btn" onclick="clearNotes()"><i class="fas fa-eraser me-1"></i>Clear</button>
+                            </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- Local Video -->
-                <div class="relative bg-black rounded-2xl overflow-hidden">
-                    <video id="localVideo" autoplay playsinline muted class="w-full h-full object-cover transform scale-x-[-1]"></video>
-                    <div class="absolute bottom-4 left-4 px-3 py-1 bg-black/50 rounded-lg text-white text-sm">
-                        You
+                <!-- Questions Panel (Interviewer only) -->
+                <div id="questionsPanel" style="display: none; flex-direction: column; height: 100%;">
+                    <div class="panel-header">
+                        <h5><i class="fas fa-list-ol me-2"></i>Question Bank</h5>
+                        <button class="panel-close" onclick="closePanel()"><i class="fas fa-times"></i></button>
                     </div>
-                    <div x-show="!videoEnabled" class="absolute inset-0 flex items-center justify-center bg-gray-800">
-                        <div class="w-24 h-24 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-full flex items-center justify-center text-white text-3xl font-bold">
-                            {{ current_user.first_name[0] }}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Controls -->
-            <div class="mt-4 flex items-center justify-center space-x-4">
-                <button @click="toggleAudio()" 
-                    class="w-14 h-14 rounded-full flex items-center justify-center transition"
-                    :class="audioEnabled ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-red-600 text-white'">
-                    <svg x-show="audioEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                    </svg>
-                    <svg x-show="!audioEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clip-rule="evenodd"></path>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path>
-                    </svg>
-                </button>
-                <button @click="toggleVideo()"
-                    class="w-14 h-14 rounded-full flex items-center justify-center transition"
-                    :class="videoEnabled ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-red-600 text-white'">
-                    <svg x-show="videoEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                    </svg>
-                    <svg x-show="!videoEnabled" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-                    </svg>
-                </button>
-                <button @click="toggleScreenShare()"
-                    class="w-14 h-14 rounded-full flex items-center justify-center transition"
-                    :class="screenSharing ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                    </svg>
-                </button>
-                {% if current_user.user_type == 'interviewer' %}
-                <button @click="showCodeEditor = !showCodeEditor"
-                    class="w-14 h-14 rounded-full flex items-center justify-center transition"
-                    :class="showCodeEditor ? 'bg-purple-600 text-white' : 'bg-gray-700 text-white hover:bg-gray-600'">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
-                    </svg>
-                </button>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Sidebar -->
-        <div class="w-96 bg-white border-l border-gray-200 flex flex-col">
-            <!-- Tabs -->
-            <div class="border-b border-gray-200">
-                <div class="flex">
-                    <button @click="activeTab = 'chat'" 
-                        class="flex-1 px-4 py-3 text-sm font-semibold transition"
-                        :class="activeTab === 'chat' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'">
-                        Chat
-                    </button>
-                    <button @click="activeTab = 'notes'"
-                        class="flex-1 px-4 py-3 text-sm font-semibold transition"
-                        :class="activeTab === 'notes' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'">
-                        Notes
-                    </button>
-                    {% if current_user.user_type == 'interviewer' %}
-                    <button @click="activeTab = 'questions'"
-                        class="flex-1 px-4 py-3 text-sm font-semibold transition"
-                        :class="activeTab === 'questions' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'">
-                        Questions
-                    </button>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Tab Content -->
-            <div class="flex-1 overflow-hidden flex flex-col">
-                <!-- Chat Tab -->
-                <div x-show="activeTab === 'chat'" class="flex-1 flex flex-col">
-                    <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chatMessages">
-                        <template x-for="msg in messages" :key="msg.id">
-                            <div :class="msg.sender === 'self' ? 'flex justify-end' : 'flex justify-start'">
-                                <div :class="msg.sender === 'self' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-900'"
-                                    class="max-w-[80%] rounded-2xl px-4 py-2">
-                                    <p x-text="msg.text"></p>
-                                    <span class="text-xs opacity-70" x-text="msg.time"></span>
-                                </div>
+                    <div class="panel-body">
+                        <div class="questions-list">
+                            <div class="question-item">
+                                <div class="q-num">Question 1</div>
+                                <div class="q-text">Tell me about yourself and your experience relevant to this role.</div>
+                                <div class="q-category">Introduction</div>
                             </div>
-                        </template>
-                    </div>
-                    <div class="p-4 border-t border-gray-200">
-                        <form @submit.prevent="sendMessage()" class="flex space-x-2">
-                            <input type="text" x-model="newMessage" placeholder="Type a message..."
-                                class="form-input flex-1">
-                            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
-                                </svg>
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- Notes Tab -->
-                <div x-show="activeTab === 'notes'" class="flex-1 p-4">
-                    <textarea x-model="notes" class="form-input w-full h-full resize-none" 
-                        placeholder="Take notes during the interview..."></textarea>
-                </div>
-
-                <!-- Questions Tab (Interviewer Only) -->
-                {% if current_user.user_type == 'interviewer' %}
-                <div x-show="activeTab === 'questions'" class="flex-1 overflow-y-auto p-4">
-                    <div class="space-y-4">
-                        {% for question in interview_questions %}
-                        <div class="p-4 bg-gray-50 rounded-xl">
-                            <p class="text-gray-900 font-medium">{{ question.text }}</p>
-                            {% if question.category %}
-                            <span class="text-xs text-indigo-600 mt-2 inline-block">{{ question.category }}</span>
-                            {% endif %}
+                            <div class="question-item">
+                                <div class="q-num">Question 2</div>
+                                <div class="q-text">What is your approach to solving complex technical problems?</div>
+                                <div class="q-category">Problem Solving</div>
+                            </div>
+                            <div class="question-item">
+                                <div class="q-num">Question 3</div>
+                                <div class="q-text">Describe a challenging project you've worked on and how you handled it.</div>
+                                <div class="q-category">Experience</div>
+                            </div>
+                            <div class="question-item">
+                                <div class="q-num">Question 4</div>
+                                <div class="q-text">How do you stay updated with the latest technologies in your field?</div>
+                                <div class="q-category">Learning</div>
+                            </div>
+                            <div class="question-item">
+                                <div class="q-num">Question 5</div>
+                                <div class="q-text">Where do you see yourself in the next 5 years?</div>
+                                <div class="q-category">Career Goals</div>
+                            </div>
                         </div>
-                        {% else %}
-                        <p class="text-gray-500 text-center">No preset questions</p>
-                        {% endfor %}
                     </div>
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
-
-    <!-- Code Editor Overlay -->
-    <div x-show="showCodeEditor" x-transition class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-                <h3 class="font-semibold text-gray-900">Collaborative Code Editor</h3>
-                <button @click="showCodeEditor = false" class="p-2 text-gray-400 hover:text-gray-600">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                    </svg>
-                </button>
-            </div>
-            <div class="flex-1 overflow-hidden">
-                <textarea class="w-full h-full p-4 font-mono text-sm resize-none focus:outline-none" 
-                    placeholder="// Share code snippets here..."></textarea>
-            </div>
-        </div>
+    
+    <!-- Fullscreen Video Overlay -->
+    <div class="fullscreen-overlay" id="fullscreenOverlay" onclick="closeFullscreen(event)">
+        <video id="fullscreenVideo" autoplay playsinline></video>
+        <button class="fullscreen-close" onclick="closeFullscreen(event)"><i class="fas fa-times"></i></button>
     </div>
-</div>
 
-<script src="{{ url_for('static', filename='js/interview_room.js') }}"></script>
-<script>
-function interviewRoom() {
-    return {
-        connected: false,
-        duration: 0,
-        audioEnabled: true,
-        videoEnabled: true,
-        screenSharing: false,
-        remoteVideoEnabled: true,
-        activeTab: 'chat',
-        showCodeEditor: false,
-        messages: [],
-        newMessage: '',
-        notes: '',
+    <!-- Scripts -->
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Pass room data to JavaScript -->
+    <script>
+        window.interviewRoomData = {
+            roomId: {{ room.id }},
+            roomCode: "{{ room.room_code }}",
+            userRole: "{{ current_user_role }}",
+            username: "{{ current_user.first_name }} {{ current_user.last_name }}"
+        };
         
-        init() {
-            // Start duration timer
-            setInterval(() => this.duration++, 1000);
+        // Panel management
+        let currentPanel = null;
+        let unreadMessages = 0;
+        
+        function togglePanel(panel) {
+            const sidePanel = document.getElementById('sidePanel');
+            const chatPanel = document.getElementById('chatPanel');
+            const notesPanel = document.getElementById('notesPanel');
+            const questionsPanel = document.getElementById('questionsPanel');
             
-            // Initialize WebRTC (would connect to actual signaling server)
-            this.initializeMedia();
-        },
-        
-        formatDuration(seconds) {
-            const hrs = Math.floor(seconds / 3600);
-            const mins = Math.floor((seconds % 3600) / 60);
-            const secs = seconds % 60;
-            return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        },
-        
-        async initializeMedia() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                document.getElementById('localVideo').srcObject = stream;
-                this.connected = true;
-            } catch (err) {
-                console.error('Failed to get media:', err);
+            // Hide all panels first
+            chatPanel.style.display = 'none';
+            notesPanel.style.display = 'none';
+            questionsPanel.style.display = 'none';
+            
+            if (currentPanel === panel) {
+                sidePanel.classList.remove('open');
+                currentPanel = null;
+                return;
             }
-        },
-        
-        toggleAudio() {
-            this.audioEnabled = !this.audioEnabled;
-            // Would mute/unmute actual stream
-        },
-        
-        toggleVideo() {
-            this.videoEnabled = !this.videoEnabled;
-            // Would enable/disable video track
-        },
-        
-        toggleScreenShare() {
-            this.screenSharing = !this.screenSharing;
-            // Would start/stop screen sharing
-        },
-        
-        sendMessage() {
-            if (this.newMessage.trim()) {
-                this.messages.push({
-                    id: Date.now(),
-                    text: this.newMessage,
-                    sender: 'self',
-                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                });
-                this.newMessage = '';
-            }
-        },
-        
-        leaveInterview() {
-            if (confirm('Are you sure you want to leave this interview?')) {
-                window.location.href = '{{ url_for("candidate.candidate_interviews") if current_user.user_type == "candidate" else url_for("interviewer.interviewer_dashboard") }}';
+            
+            currentPanel = panel;
+            sidePanel.classList.add('open');
+            
+            if (panel === 'chat') {
+                chatPanel.style.display = 'flex';
+                unreadMessages = 0;
+                updateChatBadge();
+            } else if (panel === 'notes') {
+                notesPanel.style.display = 'flex';
+            } else if (panel === 'questions') {
+                questionsPanel.style.display = 'flex';
             }
         }
-    }
-}
-</script>
-{% endblock %}
+        
+        function closePanel() {
+            document.getElementById('sidePanel').classList.remove('open');
+            currentPanel = null;
+        }
+        
+        function updateChatBadge() {
+            const badge = document.getElementById('chatBadge');
+            if (unreadMessages > 0 && currentPanel !== 'chat') {
+                badge.textContent = unreadMessages > 9 ? '9+' : unreadMessages;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+        
+        // Chat functions
+        function sendChatMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message || !window.interviewRoom) return;
+            
+            window.interviewRoom.sendChat(message);
+            addChatMessage('You', message, true);
+            input.value = '';
+        }
+        
+        function handleChatKeypress(e) {
+            if (e.key === 'Enter') sendChatMessage();
+        }
+        
+        function addChatMessage(sender, text, isSelf) {
+            const container = document.getElementById('chatMessages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'chat-msg ' + (isSelf ? 'self' : 'other');
+            msgDiv.innerHTML = `
+                <div class="sender">${sender}</div>
+                <div class="bubble">${text}</div>
+            `;
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+            
+            if (!isSelf && currentPanel !== 'chat') {
+                unreadMessages++;
+                updateChatBadge();
+            }
+        }
+        
+        // Notes functions
+        function saveNotes() {
+            const notes = document.getElementById('interviewNotes').value;
+            localStorage.setItem('interview_notes_{{ room.room_code }}', notes);
+            alert('Notes saved!');
+        }
+        
+        function clearNotes() {
+            if (confirm('Clear all notes?')) {
+                document.getElementById('interviewNotes').value = '';
+            }
+        }
+        
+        // Load saved notes on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            const savedNotes = localStorage.getItem('interview_notes_{{ room.room_code }}');
+            if (savedNotes) {
+                document.getElementById('interviewNotes').value = savedNotes;
+            }
+        });
+        
+        // Video fullscreen
+        function toggleFullscreen() {
+            const mainVideo = document.getElementById('mainVideo');
+            if (mainVideo.srcObject) {
+                const fullscreenVideo = document.getElementById('fullscreenVideo');
+                fullscreenVideo.srcObject = mainVideo.srcObject;
+                document.getElementById('fullscreenOverlay').classList.add('active');
+            }
+        }
+        
+        function closeFullscreen(e) {
+            if (e.target.id === 'fullscreenOverlay' || e.target.closest('.fullscreen-close')) {
+                document.getElementById('fullscreenOverlay').classList.remove('active');
+            }
+        }
+        
+        // Swap videos (click on self video to swap)
+        let videosSwapped = false;
+        function swapVideos() {
+            // This would swap main and self video - optional feature
+            console.log('Swap videos clicked');
+        }
+        
+        // Call duration timer
+        let callSeconds = 0;
+        setInterval(() => {
+            callSeconds++;
+            const mins = Math.floor(callSeconds / 60);
+            const secs = callSeconds % 60;
+            document.getElementById('callDuration').textContent = 
+                mins + ':' + secs.toString().padStart(2, '0');
+        }, 1000);
+    </script>
+    
+    <!-- Include the interview room script -->
+    <script src="{{ url_for('static', filename='js/interview_room.js') }}"></script>
+</body>
+</html>

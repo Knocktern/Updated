@@ -33,15 +33,50 @@ def join_interview(room_code):
             flash('You are not authorized to join this interview', 'error')
             return redirect(url_for('main.index'))
         
-        # Get all participants
+        # Get all participants with user info
         participants = db.session.query(InterviewParticipant, User).join(User).filter(
             InterviewParticipant.room_id == room.id
         ).all()
         
+        # Get current user
+        current_user = User.query.get(session['user_id'])
+        
+        # Get job and company info from application
+        job = room.application.job
+        company = job.company
+        
+        # Get candidate info
+        candidate = room.application.candidate
+        candidate_user = candidate.user
+        candidate_name = f"{candidate_user.first_name} {candidate_user.last_name}"
+        
+        # Get interviewer names (all interviewers in this room)
+        interviewer_names = []
+        for p, u in participants:
+            if p.role == 'interviewer':
+                interviewer_names.append(f"{u.first_name} {u.last_name}")
+        interviewer_name = ", ".join(interviewer_names) if interviewer_names else "Interviewer"
+        
+        # Update room status if interview is starting
+        if room.status == 'scheduled':
+            room.status = 'active'
+            room.started_at = datetime.utcnow()
+            participant.joined_at = datetime.utcnow()
+            participant.is_active = True
+            db.session.commit()
+        
         return render_template('interviewer/interview_room.html', 
-                             room=room, 
+                             room=room,
+                             interview=room,  # Alias for template compatibility
+                             job=job,
+                             company=company,
+                             candidate_name=candidate_name,
+                             interviewer_name=interviewer_name,
                              participants=participants,
-                             current_user_role=participant.role)
+                             current_user=current_user,
+                             current_user_role=participant.role,
+                             interview_questions=[]  # TODO: Add preset questions feature
+                            )
         
     except Exception as e:
         flash(f'Error loading interview room: {e}', 'error')
@@ -54,25 +89,119 @@ def interview_feedback(room_code):
         
     room = InterviewRoom.query.filter_by(room_code=room_code).first_or_404()
     
-    if request.method == 'POST':
-        feedback = InterviewFeedback(
-            room_id=room.id,
-            interviewer_id=session['user_id'],
-            candidate_id=room.application.candidate.user_id,
-            technical_score=int(request.form.get('technical_score', 0)),
-            communication_score=int(request.form.get('communication_score', 0)),
-            problem_solving_score=int(request.form.get('problem_solving_score', 0)),
-            overall_rating=request.form.get('overall_rating'),
-            feedback_text=request.form.get('feedback_text'),
-            recommendation=request.form.get('recommendation')
-        )
-        db.session.add(feedback)
-        db.session.commit()
-        
-        flash('Feedback submitted successfully', 'success')
+    # Verify this interviewer was part of this interview
+    participant = InterviewParticipant.query.filter_by(
+        room_id=room.id,
+        user_id=session['user_id'],
+        role='interviewer'
+    ).first()
+    
+    if not participant:
+        flash('You are not authorized to submit feedback for this interview', 'error')
         return redirect(url_for('interviewer.interviewer_dashboard'))
+    
+    # Check if feedback already submitted
+    existing_feedback = InterviewFeedback.query.filter_by(
+        room_id=room.id,
+        interviewer_id=session['user_id']
+    ).first()
+    
+    if existing_feedback:
+        flash('You have already submitted feedback for this interview', 'info')
+        return redirect(url_for('interviewer.interviewer_dashboard'))
+    
+    # Get job and candidate info
+    job = room.application.job
+    company = job.company
+    candidate = room.application.candidate
+    candidate_user = candidate.user
+    candidate_name = f"{candidate_user.first_name} {candidate_user.last_name}"
+    
+    # Skill categories for assessment
+    skill_categories = {
+        'Technical Skills': ['Problem Solving', 'Code Quality', 'System Design', 'Technical Knowledge'],
+        'Soft Skills': ['Communication', 'Teamwork', 'Adaptability', 'Critical Thinking']
+    }
+    
+    if request.method == 'POST':
+        try:
+            # Get scores
+            technical_score = int(request.form.get('technical_score', 0) or 0)
+            communication_score = int(request.form.get('communication_score', 0) or 0)
+            problem_solving_score = int(request.form.get('problem_solving_score', 0) or 0)
+            
+            # Map overall_rating from number to enum value
+            rating_num = int(request.form.get('overall_rating', 3) or 3)
+            rating_map = {1: 'poor', 2: 'average', 3: 'average', 4: 'good', 5: 'excellent'}
+            overall_rating = rating_map.get(rating_num, 'average')
+            
+            # Get recommendation
+            recommendation = request.form.get('recommendation', '')
+            rec_map = {'strong_yes': 'hire', 'yes': 'hire', 'no': 'reject', 'strong_no': 'reject'}
+            recommendation_enum = rec_map.get(recommendation, 'maybe')
+            
+            # Compile feedback text from various fields
+            strengths = request.form.get('strengths', '')
+            improvements = request.form.get('improvements', '')
+            technical_notes = request.form.get('technical_notes', '')
+            additional_comments = request.form.get('additional_comments', '')
+            recommendation_reason = request.form.get('recommendation_reason', '')
+            
+            feedback_text = f"""
+Strengths: {strengths}
+
+Areas for Improvement: {improvements}
+
+Technical Notes: {technical_notes}
+
+Additional Comments: {additional_comments}
+
+Recommendation Reason: {recommendation_reason}
+            """.strip()
+            
+            feedback = InterviewFeedback(
+                room_id=room.id,
+                interviewer_id=session['user_id'],
+                candidate_id=candidate_user.id,
+                technical_score=technical_score,
+                communication_score=communication_score,
+                problem_solving_score=problem_solving_score,
+                overall_rating=overall_rating,
+                feedback_text=feedback_text,
+                recommendation=recommendation_enum
+            )
+            db.session.add(feedback)
+            
+            # Update interview room status if not already completed
+            if room.status != 'completed':
+                room.status = 'completed'
+                room.ended_at = datetime.utcnow()
+            
+            db.session.commit()
+            
+            # Notify employer about submitted feedback
+            create_notification(
+                room.application.job.company.user_id,
+                'Interview Feedback Submitted',
+                f'Feedback has been submitted for {candidate_name}\'s interview for {job.title}.',
+                'system',
+                url_for('employer.employer_view_application', application_id=room.application.id)
+            )
+            
+            flash('Feedback submitted successfully!', 'success')
+            return redirect(url_for('interviewer.interviewer_dashboard'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error submitting feedback: {str(e)}', 'error')
         
-    return render_template('interviewer/interview_feedback.html', room=room)
+    return render_template('interviewer/interview_feedback.html', 
+                          room=room,
+                          interview=room,
+                          job=job,
+                          company=company,
+                          candidate_name=candidate_name,
+                          skill_categories=skill_categories)
 
 @bp.route('/interview/<room_code>/code-editor')
 def code_editor(room_code):
@@ -99,7 +228,7 @@ def code_editor(room_code):
             InterviewParticipant.room_id == room.id
         ).all()
         
-        return render_template('exam/code_editor.html', 
+        return render_template('interviewer/code_editor.html', 
                              room=room, 
                              participants=participants,
                              current_user_role=participant.role)

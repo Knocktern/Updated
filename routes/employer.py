@@ -11,7 +11,7 @@ from models import (
     CandidateProfile, CandidateSkill, Skill, MCQExam, MCQQuestion,
     InterviewerRecommendation, ActivityLog, Notification, ApplicationStatusHistory, InterviewRoom,
     InterviewerProfile, InterviewerSkill, InterviewerIndustry, InterviewerAvailability,
-    InterviewerReview, InterviewerJobRole
+    InterviewerReview, InterviewerJobRole, InterviewFeedback, InterviewParticipant
 )
 from services import log_activity, create_notification
 from services.job_matching_service import calculate_job_match_score
@@ -501,6 +501,21 @@ def employer_view_application(application_id):
         application_id=application_id
     ).all()
     
+    # Get scheduled interview (if any)
+    interview_room = InterviewRoom.query.filter_by(
+        job_application_id=application_id
+    ).first()
+    
+    # Get interview feedback (if interview completed)
+    interview_feedbacks = []
+    if interview_room:
+        feedbacks = db.session.query(InterviewFeedback, User).join(
+            User, InterviewFeedback.interviewer_id == User.id
+        ).filter(
+            InterviewFeedback.room_id == interview_room.id
+        ).all()
+        interview_feedbacks = feedbacks
+    
     return render_template('employer/employer_view_application.html',
                          application=application,
                          job=job,
@@ -511,7 +526,9 @@ def employer_view_application(application_id):
                          status_history=status_history,
                          match_score=match_score,
                          available_interviewers=available_interviewers,
-                         interviewer_recommendations=interviewer_recommendations)
+                         interviewer_recommendations=interviewer_recommendations,
+                         interview_room=interview_room,
+                         interview_feedbacks=interview_feedbacks)
 
 
 @bp.route('/application/<int:application_id>/update_status', methods=['POST'])
@@ -1167,3 +1184,180 @@ def review_interviewer(profile_id):
                          company=company,
                          profile=profile,
                          completed_interviews=completed_interviews)
+
+
+@bp.route('/application/<int:application_id>/schedule_interview', methods=['GET', 'POST'])
+def schedule_interview(application_id):
+    """Schedule an interview for a shortlisted candidate"""
+    if 'user_id' not in session or session['user_type'] != 'employer':
+        return redirect(url_for('auth.login'))
+    
+    user = User.query.get(session['user_id'])
+    company = user.company
+    
+    # Verify application belongs to this employer's company
+    application = db.session.query(JobApplication).join(
+        JobPosting, JobApplication.job_id == JobPosting.id
+    ).filter(
+        JobApplication.id == application_id,
+        JobPosting.company_id == company.id
+    ).first()
+    
+    if not application:
+        flash('Application not found or unauthorized access', 'error')
+        return redirect(url_for('employer.employer_applications'))
+    
+    # Check if interview already scheduled
+    existing_interview = InterviewRoom.query.filter_by(
+        job_application_id=application_id
+    ).filter(InterviewRoom.status.in_(['scheduled', 'active'])).first()
+    
+    if existing_interview:
+        flash('An interview is already scheduled for this application', 'warning')
+        return redirect(url_for('employer.employer_view_application', application_id=application_id))
+    
+    if request.method == 'POST':
+        try:
+            # Parse datetime
+            scheduled_date = request.form.get('date')
+            scheduled_time = request.form.get('time')
+            scheduled_datetime = datetime.strptime(f"{scheduled_date} {scheduled_time}", '%Y-%m-%d %H:%M')
+            
+            # Validate that scheduled time is in the future
+            if scheduled_datetime < datetime.now():
+                flash('Please select a future date and time for the interview', 'error')
+                return redirect(url_for('employer.schedule_interview', application_id=application_id))
+            
+            duration = int(request.form.get('duration', 60))
+            interview_type = request.form.get('interview_type', 'video')
+            notes = request.form.get('notes', '')
+            
+            # Generate unique room code
+            import uuid
+            room_code = f"INT{application_id}{uuid.uuid4().hex[:8].upper()}"
+            
+            # Create interview room
+            interview_room = InterviewRoom(
+                room_name=f"Interview - {application.job.title}",
+                room_code=room_code,
+                job_application_id=application_id,
+                scheduled_time=scheduled_datetime,
+                duration_minutes=duration,
+                status='scheduled',
+                created_by=session['user_id']
+            )
+            
+            db.session.add(interview_room)
+            db.session.flush()
+            
+            # Add candidate as participant
+            from models import InterviewParticipant
+            candidate_participant = InterviewParticipant(
+                room_id=interview_room.id,
+                user_id=application.candidate.user_id,
+                role='candidate'
+            )
+            db.session.add(candidate_participant)
+            
+            # Add selected interviewers
+            interviewer_ids = request.form.getlist('interviewer_ids')
+            for interviewer_id in interviewer_ids:
+                interviewer_participant = InterviewParticipant(
+                    room_id=interview_room.id,
+                    user_id=int(interviewer_id),
+                    role='interviewer'
+                )
+                db.session.add(interviewer_participant)
+            
+            # Update application status to interview_scheduled
+            old_status = application.application_status
+            application.application_status = 'interview_scheduled'
+            
+            # Create status history
+            status_history = ApplicationStatusHistory(
+                application_id=application_id,
+                old_status=old_status,
+                new_status='interview_scheduled',
+                changed_by=session['user_id'],
+                notes=f'Interview scheduled for {scheduled_datetime.strftime("%B %d, %Y at %I:%M %p")}'
+            )
+            db.session.add(status_history)
+            
+            # Log activity
+            log_activity('interview_rooms', 'INSERT', interview_room.id,
+                        new_values={
+                            'application_id': application_id,
+                            'scheduled_time': scheduled_datetime.isoformat(),
+                            'interviewer_ids': interviewer_ids
+                        },
+                        user_id=session['user_id'])
+            
+            db.session.commit()
+            
+            # Send notifications
+            candidate_user = application.candidate.user
+            create_notification(
+                candidate_user.id,
+                'Interview Scheduled',
+                f'Your interview for {application.job.title} at {company.company_name} has been scheduled for {scheduled_datetime.strftime("%B %d, %Y at %I:%M %p")}.',
+                'system',
+                url_for('interview.join_interview', room_code=room_code)
+            )
+            
+            # Notify interviewers
+            for interviewer_id in interviewer_ids:
+                create_notification(
+                    int(interviewer_id),
+                    'Interview Assignment',
+                    f'You have been assigned to interview {candidate_user.first_name} {candidate_user.last_name} for {application.job.title} on {scheduled_datetime.strftime("%B %d, %Y at %I:%M %p")}.',
+                    'system',
+                    url_for('interview.join_interview', room_code=room_code)
+                )
+            
+            flash('Interview scheduled successfully!', 'success')
+            return redirect(url_for('employer.employer_view_application', application_id=application_id))
+            
+        except ValueError as e:
+            flash('Invalid date/time format. Please try again.', 'error')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error scheduling interview: {str(e)}', 'error')
+    
+    # GET request - show the form
+    # Get available interviewers (company's in-house + platform interviewers)
+    # In-house interviewers assigned to this company
+    inhouse_interviewers = db.session.query(User, InterviewerProfile).join(
+        InterviewerProfile, User.id == InterviewerProfile.user_id
+    ).filter(
+        User.user_type == 'interviewer',
+        InterviewerProfile.company_id == company.id,
+        InterviewerProfile.is_available == True
+    ).all()
+    
+    # Platform interviewers (freelancers - verified)
+    platform_interviewers = db.session.query(User, InterviewerProfile).join(
+        InterviewerProfile, User.id == InterviewerProfile.user_id
+    ).filter(
+        User.user_type == 'interviewer',
+        InterviewerProfile.company_id.is_(None),
+        InterviewerProfile.is_available == True,
+        InterviewerProfile.is_verified == True
+    ).all()
+    
+    # All other interviewers (fallback if no in-house or platform interviewers)
+    all_interviewers = db.session.query(User, InterviewerProfile).join(
+        InterviewerProfile, User.id == InterviewerProfile.user_id
+    ).filter(
+        User.user_type == 'interviewer'
+    ).all()
+    
+    return render_template('employer/schedule_interview.html',
+                         user=user,
+                         company=company,
+                         application=application,
+                         job=application.job,
+                         candidate=application.candidate,
+                         inhouse_interviewers=inhouse_interviewers,
+                         platform_interviewers=platform_interviewers,
+                         all_interviewers=all_interviewers,
+                         today=datetime.now().strftime('%Y-%m-%d'))

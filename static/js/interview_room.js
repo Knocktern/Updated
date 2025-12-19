@@ -8,10 +8,13 @@ class InterviewRoom {
         this.localStream = null;
         this.screenStream = null;
         this.peers = {}; // sid -> RTCPeerConnection
+        this.remoteStreams = {}; // sid -> MediaStream
         this.sidToUsername = {}; // sid -> username for UI
         this.socket = io();
         this.isMuted = false;
+        this.isVideoOff = false;
         this.isScreenSharing = false;
+        this.currentMainVideoSid = null; // Track whose video is in main view
         
         console.log('Interview room initialized:', { roomId, roomCode, userRole, username });
         
@@ -35,14 +38,13 @@ class InterviewRoom {
             // Add users to list first
             list.forEach(p => {
                 this.sidToUsername[p.sid] = p.username;
-                this.addUserToList(p.sid, p.username, p.role);
             });
             
             // Then create offers with proper delay
             list.forEach(p => {
                 setTimeout(() => {
                     this.createOffer(p.sid);
-                }, 1500); // Increased delay
+                }, 1500);
             });
         });
 
@@ -53,7 +55,6 @@ class InterviewRoom {
             
             console.log('User joined:', data.username, data.sid);
             this.sidToUsername[data.sid] = data.username;
-            this.addUserToList(data.sid, data.username, data.role);
             
             // Create offer for new peer with proper timing
             setTimeout(() => {
@@ -65,9 +66,14 @@ class InterviewRoom {
         this.socket.on('user_left', (data) => {
             if (!data || !data.sid) return;
             console.log('User left:', data.username, data.sid);
-            this.removeUserFromList(data.sid);
             this.removePeer(data.sid);
             delete this.sidToUsername[data.sid];
+            delete this.remoteStreams[data.sid];
+            
+            // If the main video was showing this user, clear it
+            if (this.currentMainVideoSid === data.sid) {
+                this.clearMainVideo();
+            }
         });
 
         // WebRTC signaling
@@ -88,21 +94,31 @@ class InterviewRoom {
             console.log('Received ICE candidate from:', data.from);
             this.handleIceCandidate(data.candidate, data.from);
         });
+        
+        // Chat messages
+        this.socket.on('chat_message', (data) => {
+            if (typeof addChatMessage === 'function') {
+                addChatMessage(data.username, data.message, false);
+            }
+        });
     }
 
     initializeUI() {
         // Get DOM elements
         this.localVideo = document.getElementById('localVideo');
+        this.mainVideo = document.getElementById('mainVideo');
+        this.mainVideoLabel = document.getElementById('mainVideoLabel');
+        this.mainVideoContainer = document.getElementById('mainVideoContainer');
+        this.noRemoteMessage = document.getElementById('noRemoteMessage');
         this.muteBtn = document.getElementById('muteBtn');
+        this.videoToggleBtn = document.getElementById('videoToggleBtn');
         this.screenShareBtn = document.getElementById('screenShareBtn');
         this.codeEditorBtn = document.getElementById('codeEditorBtn');
         this.endCallBtn = document.getElementById('endCallBtn');
-        this.membersList = document.getElementById('membersList');
-        this.waitingMessage = document.getElementById('waitingMessage');
-        this.videosGrid = document.getElementById('videosGrid');
 
         // Add event listeners
         if (this.muteBtn) this.muteBtn.addEventListener('click', () => this.toggleMute());
+        if (this.videoToggleBtn) this.videoToggleBtn.addEventListener('click', () => this.toggleVideo());
         if (this.screenShareBtn) this.screenShareBtn.addEventListener('click', () => this.toggleScreenShare());
         if (this.codeEditorBtn) this.codeEditorBtn.addEventListener('click', () => this.openCodeEditor());
         if (this.endCallBtn) this.endCallBtn.addEventListener('click', () => this.endCall());
@@ -115,8 +131,8 @@ class InterviewRoom {
         try {
             this.localStream = await navigator.mediaDevices.getUserMedia({
                 video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
                 },
                 audio: {
                     echoCancellation: true,
@@ -193,12 +209,11 @@ class InterviewRoom {
             }
         };
 
-        // Handle remote stream - FIXED VERSION
+        // Handle remote stream
         peerConnection.ontrack = (event) => {
             console.log('Received remote track from:', sid, 'kind:', event.track.kind);
             if (event.streams && event.streams[0]) {
-                // Pass the first stream, not the streams array
-                this.addRemoteVideo(sid, event.streams[0]);
+                this.setRemoteVideo(sid, event.streams[0]);
             }
         };
 
@@ -240,7 +255,6 @@ class InterviewRoom {
             const remoteDesc = new RTCSessionDescription(offer);
             
             if (peerConnection.signalingState === 'have-local-offer') {
-                // Rollback local offer to accept remote offer (glare handling)
                 await peerConnection.setLocalDescription({ type: 'rollback' });
             }
             
@@ -282,131 +296,48 @@ class InterviewRoom {
         }
     }
 
-    // FIXED addRemoteVideo function
-    addRemoteVideo(sid, stream) {
-        console.log('Adding remote video for:', sid, stream);
+    // Set remote video in main view
+    setRemoteVideo(sid, stream) {
+        console.log('Setting remote video for:', sid);
         
-        // Remove existing video for this participant
-        const existingWrapper = document.getElementById(`remote-wrapper-${sid}`);
-        if (existingWrapper) {
-            existingWrapper.remove();
+        // Store the stream
+        this.remoteStreams[sid] = stream;
+        
+        // Show in main video
+        if (this.mainVideo) {
+            this.mainVideo.srcObject = stream;
+            this.mainVideo.style.display = 'block';
+            this.mainVideo.play().catch(e => console.log('Remote video autoplay prevented'));
         }
         
-        // Get the videos grid container
-        const videosGrid = document.getElementById('videosGrid');
-        if (!videosGrid) {
-            console.error('Videos grid not found');
-            return;
+        // Update label
+        const username = this.sidToUsername[sid] || 'Participant';
+        if (this.mainVideoLabel) {
+            this.mainVideoLabel.textContent = username;
+            this.mainVideoLabel.style.display = 'block';
         }
-        
-        // Create video wrapper
-        const videoWrapper = document.createElement('div');
-        videoWrapper.className = 'remote-video-wrapper';
-        videoWrapper.id = `remote-wrapper-${sid}`;
-        
-        // Create video element
-        const remoteVideo = document.createElement('video');
-        remoteVideo.id = `remote-video-${sid}`;
-        remoteVideo.className = 'remote-video';
-        remoteVideo.autoplay = true;
-        remoteVideo.playsInline = true;
-        remoteVideo.muted = false;
-        remoteVideo.srcObject = stream;
-        
-        // Create username label
-        const usernameLabel = document.createElement('div');
-        usernameLabel.className = 'video-label';
-        usernameLabel.textContent = this.sidToUsername[sid] || 'Remote User';
-        
-        // Assemble the structure
-        videoWrapper.appendChild(remoteVideo);
-        videoWrapper.appendChild(usernameLabel);
-        videosGrid.appendChild(videoWrapper);
-        
-        // Update grid layout based on participant count
-        this.updateGridLayout();
         
         // Hide waiting message
-        if (this.waitingMessage) {
-            this.waitingMessage.style.display = 'none';
+        if (this.noRemoteMessage) {
+            this.noRemoteMessage.style.display = 'none';
         }
         
-        // Try to play video
-        remoteVideo.play().catch(e => {
-            console.log('Remote video autoplay prevented for:', sid);
-        });
-        
-        console.log('Remote video added successfully for:', sid);
+        this.currentMainVideoSid = sid;
+        console.log('Remote video set successfully for:', sid);
     }
-
-    updateGridLayout() {
-        const videosGrid = document.getElementById('videosGrid');
-        if (!videosGrid) return;
-        
-        const totalVideos = videosGrid.children.length;
-        
-        // Remove all grid classes
-        videosGrid.classList.remove('single-participant', 'two-participants', 'three-participants', 'four-or-more');
-        
-        // Add appropriate class based on participant count
-        if (totalVideos === 1) {
-            videosGrid.classList.add('single-participant');
-        } else if (totalVideos === 2) {
-            videosGrid.classList.add('two-participants');
-        } else if (totalVideos === 3) {
-            videosGrid.classList.add('three-participants');
-        } else {
-            videosGrid.classList.add('four-or-more');
+    
+    clearMainVideo() {
+        if (this.mainVideo) {
+            this.mainVideo.srcObject = null;
+            this.mainVideo.style.display = 'none';
         }
-    }
-
-    openCodeEditor() {
-        // Open code editor in a new tab
-        const codeEditorUrl = `/interview/${this.roomCode}/code-editor`;
-        window.open(codeEditorUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
-    }
-
-    addUserToList(sid, username, role) {
-        if (!sid) return;
-        const memberId = `member-${sid}`;
-        if (document.getElementById(memberId)) return;
-
-        const membersList = document.getElementById('membersList');
-        if (!membersList) return;
-
-        const memberItem = document.createElement('div');
-        memberItem.className = 'member-item';
-        memberItem.id = memberId;
-        memberItem.innerHTML = `
-            <div class="member-info">
-                <span class="member-name">${username}</span>
-                <span class="member-role badge ${role}">${role}</span>
-            </div>
-        `;
-
-        membersList.appendChild(memberItem);
-    }
-
-    removeUserFromList(sid) {
-        const memberItem = document.getElementById(`member-${sid}`);
-        if (memberItem) {
-            memberItem.remove();
+        if (this.mainVideoLabel) {
+            this.mainVideoLabel.style.display = 'none';
         }
-        
-        // Remove remote video wrapper
-        const remoteWrapper = document.getElementById(`remote-wrapper-${sid}`);
-        if (remoteWrapper) {
-            remoteWrapper.remove();
+        if (this.noRemoteMessage) {
+            this.noRemoteMessage.style.display = 'block';
         }
-        
-        // Update grid layout
-        this.updateGridLayout();
-        
-        // Show waiting message if no remote videos left
-        const videosGrid = document.getElementById('videosGrid');
-        if (videosGrid && videosGrid.children.length === 1 && this.waitingMessage) {
-            this.waitingMessage.style.display = 'block';
-        }
+        this.currentMainVideoSid = null;
     }
 
     removePeer(sid) {
@@ -426,9 +357,26 @@ class InterviewRoom {
                 
                 if (this.muteBtn) {
                     this.muteBtn.innerHTML = this.isMuted ? 
-                        '<i class="fas fa-microphone-slash"></i> Unmute' : 
-                        '<i class="fas fa-microphone"></i> Mute';
+                        '<i class="fas fa-microphone-slash"></i>' : 
+                        '<i class="fas fa-microphone"></i>';
                     this.muteBtn.classList.toggle('muted', this.isMuted);
+                }
+            }
+        }
+    }
+
+    toggleVideo() {
+        if (this.localStream) {
+            const videoTrack = this.localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = !videoTrack.enabled;
+                this.isVideoOff = !videoTrack.enabled;
+                
+                if (this.videoToggleBtn) {
+                    this.videoToggleBtn.innerHTML = this.isVideoOff ? 
+                        '<i class="fas fa-video-slash"></i>' : 
+                        '<i class="fas fa-video"></i>';
+                    this.videoToggleBtn.classList.toggle('off', this.isVideoOff);
                 }
             }
         }
@@ -460,8 +408,7 @@ class InterviewRoom {
 
                 this.isScreenSharing = true;
                 if (this.screenShareBtn) {
-                    this.screenShareBtn.innerHTML = '<i class="fas fa-desktop"></i> Stop Sharing';
-                    this.screenShareBtn.classList.add('sharing');
+                    this.screenShareBtn.classList.add('active');
                 }
 
                 // Handle screen share ending
@@ -502,12 +449,27 @@ class InterviewRoom {
 
         this.isScreenSharing = false;
         if (this.screenShareBtn) {
-            this.screenShareBtn.innerHTML = '<i class="fas fa-desktop"></i> Share Screen';
-            this.screenShareBtn.classList.remove('sharing');
+            this.screenShareBtn.classList.remove('active');
         }
     }
 
+    openCodeEditor() {
+        // Open code editor in a new tab
+        const codeEditorUrl = `/interview/${this.roomCode}/code-editor`;
+        window.open(codeEditorUrl, '_blank', 'width=1200,height=800,scrollbars=yes,resizable=yes');
+    }
+    
+    // Send chat message
+    sendChat(message) {
+        this.socket.emit('chat_message', {
+            room: this.roomId,
+            message: message
+        });
+    }
+
     endCall() {
+        if (!confirm('Are you sure you want to leave this interview?')) return;
+        
         // Clean up all peer connections
         Object.values(this.peers).forEach(pc => pc.close());
         this.peers = {};
@@ -523,8 +485,12 @@ class InterviewRoom {
         // Leave socket room
         this.socket.emit('leave_interview', { room: this.roomId });
 
-        // Redirect
-        window.location.href = '/';
+        // Redirect based on role
+        if (this.userRole === 'interviewer') {
+            window.location.href = '/interviewer/dashboard';
+        } else {
+            window.location.href = '/candidate/interviews';
+        }
     }
 
     // Debug function
@@ -532,20 +498,13 @@ class InterviewRoom {
         console.log('=== Connection Debug Info ===');
         console.log('Local stream:', this.localStream);
         console.log('Number of peers:', Object.keys(this.peers).length);
+        console.log('Remote streams:', Object.keys(this.remoteStreams).length);
         
         Object.entries(this.peers).forEach(([sid, pc]) => {
             console.log(`Peer ${sid}:`);
             console.log('  Connection State:', pc.connectionState);
             console.log('  ICE Connection State:', pc.iceConnectionState);
             console.log('  Signaling State:', pc.signalingState);
-            
-            pc.getStats().then(stats => {
-                stats.forEach(report => {
-                    if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
-                        console.log(`  Video bytes received: ${report.bytesReceived}`);
-                    }
-                });
-            });
         });
     }
 }
