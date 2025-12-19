@@ -27,7 +27,7 @@ def create_app(config_class=None):
     # Initialize extensions
     db.init_app(app)
     mail.init_app(app)
-    socketio.init_app(app)
+    socketio.init_app(app, cors_allowed_origins="*")
     migrate.init_app(app, db)
     
     # Register context processor
@@ -83,3 +83,7 @@ def create_app(config_class=None):
         db.create_all()
     
     return app
+
+
+# For compatibility with platforms that expect an 'app' instance
+app = create_app()
