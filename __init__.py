@@ -78,9 +78,23 @@ def create_app(config_class=None):
     app.register_blueprint(common_bp)
     app.register_blueprint(expert_application_bp)
     
+    # Add a simple health check endpoint
+    @app.route('/health')
+    def health_check():
+        try:
+            # Test database connection
+            db.session.query('1').from_statement(db.text('SELECT 1')).all()
+            return {'status': 'healthy', 'database': 'connected'}
+        except Exception as e:
+            return {'status': 'unhealthy', 'database': str(e)}, 500
+    
     # Create database tables
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as e:
+            print(f"Warning: Could not create database tables: {e}", file=sys.stderr)
+            # Continue anyway as the app might still work for read operations
     
     return app
 

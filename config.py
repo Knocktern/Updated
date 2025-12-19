@@ -1,4 +1,4 @@
-import os
+ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -8,16 +8,26 @@ class Config:
     """Base configuration"""
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-secret-key-change-this'
     
-    # SQLAlchemy Database configuration - supports both local and Railway MySQL
-    MYSQL_HOST = os.environ.get('MYSQL_HOST', 'mysql.railway.internal')
-    MYSQL_PORT = os.environ.get('MYSQL_PORT', '3306')
-    MYSQL_USER = os.environ.get('MYSQL_USER', 'root')
-    MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD', 'IUeRYJbwroDCGCIFuCRQidvrAwfqppLy')
-    MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE', 'railway')
+    # SQLAlchemy Database configuration - supports Render, Railway, and local MySQL
+    # Try to get Render's DATABASE_URL first, then fallback to component variables
+    DATABASE_URL = os.environ.get('DATABASE_URL')
     
-    # Use DATABASE_URL if provided (Railway format), otherwise build from components
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
+    if DATABASE_URL:
+        # Use Render's provided DATABASE_URL
+        SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    else:
+        # Fallback to component variables
+        MYSQL_HOST = os.environ.get('MYSQL_HOST') or os.environ.get('RENDER_DATABASE_HOST') or 'localhost'
+        MYSQL_PORT = os.environ.get('MYSQL_PORT', '3306')
+        MYSQL_USER = os.environ.get('MYSQL_USER') or os.environ.get('RENDER_DATABASE_USER') or 'root'
+        MYSQL_PASSWORD = os.environ.get('MYSQL_PASSWORD') or os.environ.get('RENDER_DATABASE_PASSWORD') or ''
+        MYSQL_DATABASE = os.environ.get('MYSQL_DATABASE') or os.environ.get('RENDER_DATABASE_NAME') or 'hireme'
+        
+        # Fallback to SQLite if no MySQL credentials are provided
+        if not MYSQL_PASSWORD and MYSQL_HOST == 'localhost' and MYSQL_USER == 'root':
+            SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'
+        else:
+            SQLALCHEMY_DATABASE_URI = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DATABASE}"
     
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
@@ -40,6 +50,9 @@ class Config:
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
+    
+    # Use SQLite for local development
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///app.db'
 
 
 class ProductionConfig(Config):
