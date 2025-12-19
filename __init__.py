@@ -1,14 +1,22 @@
+import os
 from flask import Flask
 from flask_migrate import Migrate
-from config import DevelopmentConfig
+from config import DevelopmentConfig, ProductionConfig
 from extensions import db, mail, socketio
 from models import *
 import realtime  # Import to register Socket.IO event handlers
 
 migrate = Migrate()
 
-def create_app(config_class=DevelopmentConfig):
+def create_app(config_class=None):
     """Application factory function"""
+    # Auto-select config based on environment
+    if config_class is None:
+        if os.environ.get('FLASK_ENV') == 'production':
+            config_class = ProductionConfig
+        else:
+            config_class = DevelopmentConfig
+    
     app = Flask(__name__, 
                 template_folder='templates',
                 static_folder='static')
