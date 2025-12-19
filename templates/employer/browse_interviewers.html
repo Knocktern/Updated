@@ -74,13 +74,13 @@
         
         <!-- Results Count -->
         <div class="mb-4 text-gray-600">
-            Found {{ interviewers|length }} expert interviewer{% if interviewers|length != 1 %}s{% endif %}
+            Found {{ interviewers.total }} expert interviewer{% if interviewers.total != 1 %}s{% endif %}
         </div>
         
         <!-- Interviewers Grid -->
-        {% if interviewers %}
+        {% if interviewers.items %}
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {% for profile, user in interviewers %}
+            {% for profile, user in interviewers.items %}
             <div class="bg-white rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition">
                 <div class="p-6">
                     <!-- Profile Header -->
@@ -158,21 +158,21 @@
         </div>
         
         <!-- Pagination -->
-        {% if pagination and pagination.pages > 1 %}
+        {% if interviewers.pages > 1 %}
         <nav class="mt-8 flex justify-center">
             <ul class="flex items-center space-x-1">
-                {% if pagination.has_prev %}
+                {% if interviewers.has_prev %}
                 <li>
-                    <a href="{{ url_for('employer.browse_expert_interviewers', page=pagination.prev_num, **request.args) }}" 
+                    <a href="{{ url_for('employer.browse_expert_interviewers', page=interviewers.prev_num, **request.args) }}" 
                        class="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
                         Previous
                     </a>
                 </li>
                 {% endif %}
                 
-                {% for page_num in pagination.iter_pages() %}
+                {% for page_num in interviewers.iter_pages() %}
                     {% if page_num %}
-                        {% if page_num == pagination.page %}
+                        {% if page_num == interviewers.page %}
                         <li>
                             <span class="px-4 py-2 rounded-lg bg-indigo-600 text-white">{{ page_num }}</span>
                         </li>
@@ -189,9 +189,9 @@
                     {% endif %}
                 {% endfor %}
                 
-                {% if pagination.has_next %}
+                {% if interviewers.has_next %}
                 <li>
-                    <a href="{{ url_for('employer.browse_expert_interviewers', page=pagination.next_num, **request.args) }}" 
+                    <a href="{{ url_for('employer.browse_expert_interviewers', page=interviewers.next_num, **request.args) }}" 
                        class="px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50">
                         Next
                     </a>
