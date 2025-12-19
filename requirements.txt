@@ -9,6 +9,8 @@ Werkzeug==2.3.6
 PyMySQL==1.1.0
 requests==2.31.0
 python-dotenv==1.0.0
+# SQLite support for local development
+SQLAlchemy==2.0.45
 
 # Production dependencies
 gunicorn==21.2.0
