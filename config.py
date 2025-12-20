@@ -2,12 +2,17 @@ import os
 
 class Config:
     """Base configuration"""
-    SECRET_KEY = 'your-secret-key-change-this'
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-secret-key-change-this'
     
     # SQLAlchemy Database configuration
-    SQLALCHEMY_DATABASE_URI = 'mysql+pymysql://root:sakibonlockdown@localhost:3306/job_matching_system'
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    if DATABASE_URL:
+        SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    else:
+        # Fallback for local development (PostgreSQL)
+        SQLALCHEMY_DATABASE_URI = os.environ.get('LOCAL_DATABASE_URL') or 'postgresql://user:password@localhost:5432/job_matching_system'
     
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Mail configuration
     MAIL_SERVER = 'smtp.gmail.com'
